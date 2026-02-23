@@ -1,0 +1,58 @@
+{
+  "name": "fastspring-mcp",
+  "version": "1.0.0",
+  "description": "Production-ready MCP server for the FastSpring API",
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "fastspring-mcp": "dist/index.js"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepare": "npm run build",
+    "start": "node dist/index.js",
+    "start:stdio": "MCP_TRANSPORT=stdio node dist/index.js",
+    "start:http": "MCP_TRANSPORT=http node dist/index.js",
+    "test": "vitest run --coverage",
+    "test:watch": "vitest --coverage",
+    "test:inspector": "npx @modelcontextprotocol/inspector node dist/index.js",
+    "test:inspector:http": "MCP_TRANSPORT=http node dist/index.js & sleep 2 && npx @modelcontextprotocol/inspector --transport http --server-url http://localhost:${MCP_HTTP_PORT:-3000}${MCP_HTTP_PATH:-/mcp}",
+    "test:smoke": "node scripts/smoke-test-mcp.mjs",
+    "test:integration": "node scripts/integration-test-api.mjs",
+    "test:tools-integration": "vitest run tests/tools/subscriptions.tools.integration.test.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --ext .ts",
+    "docker": "npm run docker:build && npm run docker:run",
+    "docker:build": "docker build -t fastspring-mcp .",
+    "docker:run": "node scripts/docker-run.mjs",
+    "docker:run:env": "docker run -d --rm --env-file .env -v \"$(pwd)/logs:/app/logs\" -p ${MCP_HTTP_PORT:-3000}:${MCP_HTTP_PORT:-3000} fastspring-mcp",
+    "docker:up": "docker compose build && docker compose up",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f",
+    "docker:up:v1": "docker-compose build && docker-compose up",
+    "docker:down:v1": "docker-compose down",
+    "docker:logs:v1": "docker-compose logs -f"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "axios": "^1.7.7",
+    "dotenv": "^16.6.1",
+    "fast-xml-parser": "^5.3.6",
+    "winston": "^3.19.0",
+    "winston-daily-rotate-file": "^5.0.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "@vitest/coverage-v8": "^2.1.4",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.4"
+  },
+  "files": [
+    "dist"
+  ]
+}

@@ -1,0 +1,47 @@
+# ── Dependencies ──────────────────────────────────────────────────────────────
+node_modules/
+
+# ── Build output ──────────────────────────────────────────────────────────────
+dist/
+
+# ── Environment & secrets ─────────────────────────────────────────────────────
+# All .env variants are excluded; only .env.example is tracked
+.env
+.env.*
+!.env.example
+
+# Private key and certificate files
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+
+# Backup / local overrides (do not commit)
+*.bak
+*.backup
+.env.local
+.env.*.local
+*.secret
+*.secrets
+
+# Local open-source checklist (may contain refs to history; do not commit)
+OPEN_SOURCE_PUSH.md
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── Test & coverage ───────────────────────────────────────────────────────────
+coverage/
+.vitest/
+
+# ── OS / editor ───────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~

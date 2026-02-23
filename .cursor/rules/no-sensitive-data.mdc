@@ -1,0 +1,27 @@
+---
+description: No hardcoded secrets or sensitive data (open source project)
+alwaysApply: true
+---
+
+# No Sensitive Data in Code or Tests
+
+This project is open source. **Never** commit or hardcode:
+
+- **Credentials**: API usernames, passwords, API keys, Bearer tokens, OAuth secrets
+- **Real account data**: Real FastSpring company IDs, order references, subscription IDs from production or staging
+- **Personal data**: Real email addresses, names, or customer identifiers (except obviously fake examples)
+
+## Allowed
+
+- **Environment variables**: Read secrets from `process.env` or `.env` (e.g. `FS_API_USERNAME`, `FS_API_PASSWORD`, `MCP_API_KEYS`). Document required vars in `.env.example` only.
+- **Test fixtures**: Obviously fake values only, e.g. `"test-user"`, `"test-pass"`, `"a@b.com"`, `"key-alpha-0000..."`, `"VI8201014-6538-11102S"` (example format), synthetic IDs like `"sub-sbl-1"`, `"ord-modern-1"`.
+- **Comments/docs**: Refer to env var names (e.g. "Set FS_API_USERNAME in .env"); never paste real values.
+
+## Integration tests
+
+- Use **only** values from environment (e.g. `process.env.TEST_ORDER_REFERENCE`, `process.env.TEST_SUBSCRIPTION_ID`). Skip or fail clearly if required env is missing.
+- Do not fall back to hardcoded "golden" IDs or credentials.
+
+## If you need a secret in code
+
+- Add it to `.env` (gitignored) and reference it via config/env. Add a placeholder to `.env.example` with a short comment.

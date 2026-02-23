@@ -1,0 +1,27 @@
+# Dependencies (rebuilt inside the image)
+node_modules
+
+# Compiled output (rebuilt inside the image)
+dist
+
+# Test artefacts
+coverage
+tests
+
+# Runtime log files (mounted as a volume in production)
+logs
+
+# Local environment overrides — never bake secrets into the image
+.env
+.env.*
+
+# Development / tooling files not needed at runtime
+scripts
+*.md
+.gitignore
+.git
+
+# Editor / OS noise
+.DS_Store
+*.swp
+*.swo
