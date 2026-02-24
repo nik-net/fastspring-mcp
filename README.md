@@ -234,6 +234,14 @@ npm run test:inspector:http
 
 The Docker image defaults to HTTP transport (`MCP_TRANSPORT=http`) and binds to `0.0.0.0` so it is reachable from outside the container. Credentials are **never baked into the image** — they are always passed at runtime.
 
+**Persistent container (recommended)** — runs in the background and **restarts automatically after a machine reboot**:
+
+```bash
+npm run docker:start
+```
+
+Stop it with `npm run docker:stop`. Ensure `.env` exists with `FS_API_USERNAME` and `FS_API_PASSWORD` (see [Environment variables](#environment-variables)).
+
 ### Prerequisites
 
 You need **both** the Docker daemon and the Compose plugin. The easiest way to get both together is **Docker Desktop**.
@@ -269,21 +277,16 @@ docker-compose --version  # docker-compose version 1.x or 2.x
 
 ### Docker Compose (recommended)
 
-Docker Compose reads your `.env` file automatically for variable substitution and passes each credential as a runtime environment variable into the container. The `.env` file itself is never copied into the image.
+Docker Compose reads your `.env` file automatically for variable substitution and passes each credential as a runtime environment variable into the container. The `.env` file itself is never copied into the image. The Compose file sets `restart: unless-stopped`, so the container survives reboots when run in detached mode.
 
-**Start (builds image on first run, uses cache on subsequent runs):**
+| Action | Command |
+|--------|--------|
+| **Start (persistent, restarts on reboot)** | `npm run docker:start` or `docker compose up -d --build` |
+| **Start (foreground, see logs in terminal)** | `npm run docker:up` or `docker compose up` |
+| **Stop** | `npm run docker:stop` or `npm run docker:down` |
+| **Logs** | `npm run docker:logs` |
 
-```bash
-# Docker Desktop / Compose v2 (docker compose — space):
-npm run docker:up
-# or directly:
-docker compose build && docker compose up
-
-# Homebrew docker-compose / Compose v1 (docker-compose — hyphen):
-npm run docker:up:v1
-# or directly:
-docker-compose build && docker-compose up
-```
+Compose v1 (Homebrew `docker-compose`): use `npm run docker:up:v1`, `npm run docker:down:v1`, `npm run docker:logs:v1`.
 
 **Verify:**
 
@@ -291,24 +294,10 @@ docker-compose build && docker-compose up
 curl http://localhost:3000/health
 ```
 
-**Tail logs:**
-
-```bash
-npm run docker:logs        # Compose v2
-npm run docker:logs:v1     # Compose v1
-```
-
-**Stop:**
-
-```bash
-npm run docker:down        # Compose v2
-npm run docker:down:v1     # Compose v1
-```
-
 **Custom port** — set `MCP_HTTP_PORT` in your `.env` or shell before starting:
 
 ```bash
-MCP_HTTP_PORT=8080 docker compose up --build
+MCP_HTTP_PORT=8080 npm run docker:start
 ```
 
 **What Docker Compose does with your `.env`:**
@@ -319,38 +308,24 @@ Docker Compose reads `.env` from the project directory and substitutes `${VAR}` 
 
 ### Plain Docker run
 
-If you prefer not to use Compose, build the image once and run it with explicit `-e` flags. Each `-e VAR` (without a value) forwards the variable from your current shell into the container.
+Build the image once, then run with env from a file. For a **persistent** container (restarts on reboot), use `docker:run:env` which uses `--restart unless-stopped` and a named container (no `--rm`).
 
 **Build:**
 
 ```bash
 npm run docker:build
-# or:
-docker build -t fastspring-mcp .
 ```
 
-**Run** (credentials must be exported in your shell first):
+**Run persistent** (loads `.env`, container survives reboot; stop with `docker stop fastspring-mcp`):
 
 ```bash
-export FS_API_USERNAME=your_username
-export FS_API_PASSWORD=your_password
-export FS_COMPANY_ID=your_company_id   # if needed
-
-npm run docker:run
-# which expands to:
-docker run --rm \
-  -e FS_API_USERNAME \
-  -e FS_API_PASSWORD \
-  -e FS_COMPANY_ID \
-  -e FS_LOG_LEVEL \
-  -e FS_DEBUG \
-  -p 3000:3000 \
-  fastspring-mcp
+npm run docker:run:env
 ```
 
-Or use `--env-file` to load from a file at run time (the file stays on the host):
+**Run one-off** (container removed when it stops; credentials from shell):
 
 ```bash
+export FS_API_USERNAME=your_username FS_API_PASSWORD=your_password
 docker run --rm --env-file .env -p 3000:3000 fastspring-mcp
 ```
 
@@ -371,7 +346,7 @@ docker tag fastspring-mcp registry.example.com/fastspring-mcp:latest
 docker push registry.example.com/fastspring-mcp:latest
 
 # 3. Deploy — pass secrets as environment variables at runtime
-docker run -d \
+docker run -d --restart unless-stopped --name fastspring-mcp \
   -e FS_API_USERNAME="$FS_API_USERNAME" \
   -e FS_API_PASSWORD="$FS_API_PASSWORD" \
   -e FS_COMPANY_ID="$FS_COMPANY_ID" \
@@ -381,6 +356,8 @@ docker run -d \
   -p 3000:3000 \
   registry.example.com/fastspring-mcp:latest
 ```
+
+The `--restart unless-stopped` and `--name fastspring-mcp` flags make the container persistent and restart automatically after a reboot.
 
 The server performs **fail-fast validation** at startup: if `FS_API_USERNAME` or `FS_API_PASSWORD` are missing, the process exits immediately with a clear error. Misconfiguration is caught at boot, not at the first API call.
 
@@ -644,14 +621,15 @@ All tools return JSON. Errors include an `error` field, and when available `stat
 
 | Script | Description |
 |---|---|
-| `npm run docker:build` | Build the Docker image (no Compose needed) |
-| `npm run docker:run` | Run the container — credentials forwarded from shell env (no Compose needed) |
-| `npm run docker:up` | Build and start via Docker Compose v2 (`docker compose`) |
-| `npm run docker:down` | Stop and remove containers (Compose v2) |
+| `npm run docker:start` | Start persistent container (detached; restarts on reboot) — **recommended** |
+| `npm run docker:stop` | Stop and remove containers (Compose) |
+| `npm run docker:build` | Build the Docker image only |
+| `npm run docker:run` | Same as `docker:start` (Compose up -d) |
+| `npm run docker:up` | Start in foreground (logs in terminal; Ctrl+C stops container) |
+| `npm run docker:down` | Same as `docker:stop` |
 | `npm run docker:logs` | Tail container logs (Compose v2) |
-| `npm run docker:up:v1` | Build and start via Compose v1 (`docker-compose` — Homebrew) |
-| `npm run docker:down:v1` | Stop and remove containers (Compose v1) |
-| `npm run docker:logs:v1` | Tail container logs (Compose v1) |
+| `npm run docker:run:env` | Plain `docker run` with `.env`, persistent (--restart unless-stopped) |
+| `npm run docker:up:v1` / `docker:down:v1` / `docker:logs:v1` | Compose v1 (docker-compose) |
 
 ---
 

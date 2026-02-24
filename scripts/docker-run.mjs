@@ -5,13 +5,13 @@
  */
 
 /**
- * Run the fastspring-mcp Docker container with port and path from .env.
- * Stops any existing container using the same image first so the port is free.
+ * Start the fastspring-mcp stack as a persistent container (restarts on reboot).
+ * Uses Docker Compose so the container has restart: unless-stopped and survives reboots.
  * Usage: node scripts/docker-run.mjs (from repo root)
  */
 
 import { existsSync, readFileSync } from "node:fs";
-import { spawnSync, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -35,37 +35,26 @@ function loadEnv() {
   return env;
 }
 
-// Stop any existing container using the fastspring-mcp image so the port is free
-const ps = spawnSync("docker", ["ps", "-q", "-f", "ancestor=fastspring-mcp"], {
-  encoding: "utf-8",
-  cwd: ROOT,
-});
-const ids = (ps.stdout || "").trim().split(/\s+/).filter(Boolean);
-if (ids.length > 0) {
-  spawnSync("docker", ["stop", ...ids], { stdio: "inherit", cwd: ROOT });
+try {
+  const proc = spawn(
+    "docker",
+    ["compose", "up", "-d", "--build"],
+    {
+      stdio: "inherit",
+      cwd: ROOT,
+      shell: false,
+    }
+  );
+  proc.on("exit", (code) => {
+    if (code !== 0) process.exit(code ?? 1);
+    const env = loadEnv();
+    const port = env.MCP_HTTP_PORT?.trim() || "3000";
+    const path = env.MCP_HTTP_PATH?.trim() || "/mcp";
+    console.log("Container running (persistent; restarts on reboot).");
+    console.log(`MCP endpoint: http://localhost:${port}${path}`);
+    console.log("Stop with: npm run docker:stop");
+  });
+} catch (err) {
+  console.error("Failed to start Docker:", err);
+  process.exit(1);
 }
-
-const env = loadEnv();
-const port = env.MCP_HTTP_PORT?.trim() || "3000";
-const path = env.MCP_HTTP_PATH?.trim() || "/mcp";
-
-const envFile = join(ROOT, ".env");
-const args = [
-  "run", "-d", "--rm",
-  "-v", `${ROOT}/logs:/app/logs`,
-  "-p", `${port}:${port}`,
-  "fastspring-mcp",
-];
-if (existsSync(envFile)) {
-  args.splice(2, 0, "--env-file", envFile);
-}
-
-const proc = spawn("docker", args, {
-  stdio: "inherit",
-  cwd: ROOT,
-  shell: false,
-});
-proc.on("exit", (code) => {
-  if (code !== 0) process.exit(code ?? 1);
-  console.log(`Container running. MCP endpoint: http://localhost:${port}${path}`);
-});

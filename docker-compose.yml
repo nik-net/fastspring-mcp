@@ -23,6 +23,7 @@ services:
       context: .
       target: production
     image: fastspring-mcp:with-tags
+    container_name: fastspring-mcp
 
     environment:
       # ── Required credentials ─────────────────────────────────────────────
