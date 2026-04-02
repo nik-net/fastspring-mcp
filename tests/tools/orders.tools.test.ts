@@ -78,7 +78,7 @@ describe("orders.tools", () => {
   // -------------------------------------------------------------------------
 
   describe("handleGetOrder — found on modern platform", () => {
-    it("returns { platform: 'modern', data: order } when modern lookup succeeds", async () => {
+    it("returns { platform: 'sbl', data: order } when SBL lookup succeeds", async () => {
       mockGet.mockResolvedValueOnce({ data: MODERN_ORDER });
 
       const result = await handleGetOrder(mockDeps, { reference: "ord-modern-1" });
@@ -89,30 +89,55 @@ describe("orders.tools", () => {
       expect(body.data).toEqual(MODERN_ORDER);
     });
 
-    it("response platform value is 'modern' (not 'sbl')", async () => {
+    it("response platform value is 'sbl'", async () => {
       mockGet.mockResolvedValueOnce({ data: MODERN_ORDER });
       const result = await handleGetOrder(mockDeps, { reference: "ord-modern-1" });
       const body = JSON.parse(result.content[0].text);
-      expect(body.platform).toBe("modern");
+      expect(body.platform).toBe("sbl");
     });
   });
 
   // -------------------------------------------------------------------------
-  // handleGetOrder — found on legacy platform
+  // handleGetOrder — found on classic platform
   // -------------------------------------------------------------------------
 
-  describe("handleGetOrder — found on legacy platform", () => {
-    it("returns { platform: 'legacy', data: ... } when only legacy succeeds", async () => {
+  describe("handleGetOrder — found on classic platform", () => {
+    it("returns { platform: 'classic', data: ... } when Classic lookup succeeds and SBL email cross-check finds no match", async () => {
       // Modern: 404
       mockGet.mockRejectedValueOnce(new FastSpringError("Not found", 404));
-      // Legacy primary: success
+      // Classic primary: success
       mockGet.mockResolvedValueOnce({ data: CLASSIC_ORDER_XML });
+      // SBL email cross-check: no matching SBL order → stays classic
+      mockGet.mockResolvedValueOnce({ data: { orders: [] } });
 
       const result = await handleGetOrder(mockDeps, { reference: "VI0000000-0000-00000" });
 
       expect(result.isError).toBeFalsy();
       const body = JSON.parse(result.content[0].text);
-      expect(body.platform).toBe("legacy");
+      expect(body.platform).toBe("classic");
+      expect(body.data.reference).toBe("VI0000000-0000-00000");
+    });
+
+    it("returns { platform: 'sbl', data: ... } when Classic finds order and SBL email cross-check matches modern record", async () => {
+      const SBL_EQUIVALENT = {
+        id: "gAzO0KiZRBWvZM1xjDWY2A",
+        reference: "VI0000000-0000-00000",
+        status: "completed",
+        customer: { email: "john@acme.com" },
+      };
+      // Modern path-based: 404
+      mockGet.mockRejectedValueOnce(new FastSpringError("Not found", 404));
+      // Classic primary: success (CLASSIC_ORDER_XML has email john@acme.com)
+      mockGet.mockResolvedValueOnce({ data: CLASSIC_ORDER_XML });
+      // SBL email cross-check: finds the modern record
+      mockGet.mockResolvedValueOnce({ data: { orders: [SBL_EQUIVALENT] } });
+
+      const result = await handleGetOrder(mockDeps, { reference: "VI0000000-0000-00000" });
+
+      expect(result.isError).toBeFalsy();
+      const body = JSON.parse(result.content[0].text);
+      expect(body.platform).toBe("sbl");
+      expect(body.data.id).toBe("gAzO0KiZRBWvZM1xjDWY2A");
       expect(body.data.reference).toBe("VI0000000-0000-00000");
     });
   });

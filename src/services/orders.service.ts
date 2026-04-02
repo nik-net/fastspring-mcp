@@ -407,9 +407,31 @@ export async function lookupOrder(
     // Step 2 — Classic API (direct + search fallback + dual-credential fallback
     //           are all handled internally by getOrderByReference).
     if (deps.companyId) {
-      const order = await getOrderByReference(deps, id);
-      if (order !== null) {
-        return { platform: Platform.CLASSIC, data: order };
+      const classicOrder = await getOrderByReference(deps, id);
+      if (classicOrder !== null) {
+        // Step 3 — SBL cross-check by customer email.
+        //
+        // Modern FastSpring accounts use VI-format references on BOTH platforms.
+        // The SBL REST API does not support direct lookup by VI reference on the
+        // path or via ?order=, so Step 1 always falls through to Classic for
+        // VI references.  However the same order may exist on SBL with an
+        // additional "id" field.  We detect this by searching SBL orders for the
+        // customer's email and matching on the VI reference.  If a match is found
+        // we return the richer SBL record; otherwise we return the Classic result.
+        if (classicOrder.customer?.email) {
+          try {
+            const sblOrders = await findOrdersByEmail(deps, classicOrder.customer.email);
+            const sblMatch = sblOrders.find(
+              (o) => o.reference === classicOrder.reference
+            );
+            if (sblMatch && typeof sblMatch.id === "string") {
+              return { platform: Platform.SBL, data: sblMatch };
+            }
+          } catch {
+            // SBL cross-check is best-effort — fall through to Classic result.
+          }
+        }
+        return { platform: Platform.CLASSIC, data: classicOrder };
       }
     }
 

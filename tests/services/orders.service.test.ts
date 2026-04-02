@@ -449,20 +449,48 @@ describe("orders.service", () => {
       expect(result?.data).toEqual(sblOrder);
     });
 
-    it("returns { platform: classic, data } when SBL fails and Classic succeeds", async () => {
+    it("returns { platform: classic, data } when SBL fails, Classic succeeds, and SBL email cross-check finds no match", async () => {
       // SBL getOrder: path form fails, query-param form also fails
       const notFoundErr = new FastSpringError("Not found", 400, {
         orders: [{ result: "error", error: { order: "Not found" } }],
       });
       mockHttp.get
-        .mockRejectedValueOnce(notFoundErr)
-        .mockRejectedValueOnce(notFoundErr);
+        .mockRejectedValueOnce(notFoundErr)   // SBL path-based lookup
+        .mockRejectedValueOnce(notFoundErr);  // SBL query-param retry
       // Classic direct lookup
       mockHttp.get.mockResolvedValueOnce({ data: makeXmlOrderResponse(classicRef) });
+      // SBL email cross-check returns no orders for this customer — pure Classic order
+      mockHttp.get.mockResolvedValueOnce({ data: { orders: [] } });
 
       const result = await lookupOrder(depsWithLegacy, classicRef);
 
       expect(result?.platform).toBe(Platform.CLASSIC);
+      expect((result?.data as { reference: string }).reference).toBe(classicRef);
+    });
+
+    it("returns { platform: sbl, data } when Classic finds order and SBL email cross-check finds a matching SBL record", async () => {
+      // SBL getOrder: path form fails, query-param form also fails
+      const notFoundErr = new FastSpringError("Not found", 400, {
+        orders: [{ result: "error", error: { order: "Not found" } }],
+      });
+      mockHttp.get
+        .mockRejectedValueOnce(notFoundErr)   // SBL path-based lookup
+        .mockRejectedValueOnce(notFoundErr);  // SBL query-param retry
+      // Classic direct lookup (provides customer email: jane@acme.com)
+      mockHttp.get.mockResolvedValueOnce({ data: makeXmlOrderResponse(classicRef) });
+      // SBL email cross-check returns an SBL order with the same VI reference
+      const sblEquivalent = {
+        id: "gAzO0KiZRBWvZM1xjDWY2A",
+        reference: classicRef,
+        status: "completed",
+        customer: { email: "jane@acme.com" },
+      };
+      mockHttp.get.mockResolvedValueOnce({ data: { orders: [sblEquivalent] } });
+
+      const result = await lookupOrder(depsWithLegacy, classicRef);
+
+      expect(result?.platform).toBe(Platform.SBL);
+      expect((result?.data as { id: string }).id).toBe("gAzO0KiZRBWvZM1xjDWY2A");
       expect((result?.data as { reference: string }).reference).toBe(classicRef);
     });
 
@@ -518,12 +546,14 @@ describe("orders.service", () => {
         orders: [{ result: "error", error: { order: "Not found" } }],
       });
       mockHttp.get
-        .mockRejectedValueOnce(notFoundErr)
-        .mockRejectedValueOnce(notFoundErr);
+        .mockRejectedValueOnce(notFoundErr)                          // SBL path-based
+        .mockRejectedValueOnce(notFoundErr);                         // SBL query-param retry
       // Classic primary → access denied
       mockHttp.get.mockResolvedValueOnce({ data: "Access denied to site." });
       // Classic legacy → success
       mockLegacyHttp.get.mockResolvedValueOnce({ data: makeXmlOrderResponse(classicRef) });
+      // SBL email cross-check → no match (pure Classic order)
+      mockHttp.get.mockResolvedValueOnce({ data: { orders: [] } });
 
       const result = await lookupOrder(depsWithLegacy, classicRef);
 
