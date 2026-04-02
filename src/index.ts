@@ -21,6 +21,10 @@ import {
   accountsToolDefinitions,
   type AccountsToolsDeps,
 } from "./tools/accounts.tools.js";
+import {
+  quotesToolDefinitions,
+  type QuotesToolsDeps,
+} from "./tools/quotes.tools.js";
 import { startStdioServer } from "./transports/stdio.js";
 import { startHttpServer, type McpServerFactory } from "./transports/http.js";
 import { z } from "zod";
@@ -32,43 +36,56 @@ const SERVER_VERSION = "1.0.0";
 // Zod → JSON Schema helpers
 // ---------------------------------------------------------------------------
 
-function zSchemaToJsonSchema(schema: z.ZodType): Record<string, unknown> {
-  const def = (
-    schema as {
-      _def?: {
-        typeName?: string;
-        schema?: z.ZodType;
-        innerType?: z.ZodType;
-      };
+// Extracts a ZodType's raw _def, typed broadly enough for all our introspection needs.
+type ZodDef = {
+  typeName?: string;
+  schema?: z.ZodType;       // ZodEffects inner schema
+  innerType?: z.ZodType;    // ZodOptional / ZodDefault inner type
+  type?: z.ZodType;         // ZodArray element type
+  values?: Record<string, unknown>; // ZodNativeEnum values map
+  description?: string;
+};
+
+function getDef(schema: z.ZodType): ZodDef {
+  return (schema as unknown as { _def: ZodDef })._def ?? {};
+}
+
+/**
+ * Unwraps wrapper types (ZodOptional, ZodDefault, ZodEffects / ZodPreprocess)
+ * until we reach a concrete type, and reports whether the field was optional.
+ */
+function unwrap(schema: z.ZodType): { inner: z.ZodType; optional: boolean } {
+  let optional = false;
+  let cur = schema;
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const d = getDef(cur);
+    if (d.typeName === "ZodOptional" || d.typeName === "ZodDefault") {
+      optional = true;
+      cur = d.innerType!;
+    } else if (d.typeName === "ZodEffects" && d.schema) {
+      cur = d.schema;
+    } else {
+      break;
     }
-  )._def;
-  if (!def) return { type: "object", properties: {} };
-  if (def.typeName === "ZodEffects" && def.schema) {
-    return zSchemaToJsonSchema(def.schema);
   }
-  if (def.typeName === "ZodObject") {
-    const shape = (schema as z.ZodObject<z.ZodRawShape>).shape;
+  return { inner: cur, optional };
+}
+
+function zSchemaToJsonSchema(schema: z.ZodType): Record<string, unknown> {
+  const { inner } = unwrap(schema);
+  const d = getDef(inner);
+
+  if (!d.typeName) return { type: "object", properties: {} };
+
+  if (d.typeName === "ZodObject") {
+    const shape = (inner as z.ZodObject<z.ZodRawShape>).shape;
     const properties: Record<string, unknown> = {};
     const required: string[] = [];
-    for (const [key, value] of Object.entries(shape)) {
-      const sub = value as z.ZodType;
-      const subDef = (
-        sub as {
-          _def?: {
-            typeName?: string;
-            innerType?: z.ZodType;
-            schema?: z.ZodType;
-          };
-        }
-      )._def;
-      const isOptional =
-        subDef?.typeName === "ZodOptional" ||
-        subDef?.typeName === "ZodDefault";
-      let inner: z.ZodType | undefined = isOptional ? subDef?.innerType : sub;
-      if (inner && subDef?.typeName === "ZodEffects" && subDef?.schema)
-        inner = subDef.schema;
-      if (inner) properties[key] = zodTypeToJsonSchema(inner);
-      if (!isOptional) required.push(key);
+    for (const [key, field] of Object.entries(shape)) {
+      const { inner: fieldInner, optional } = unwrap(field as z.ZodType);
+      properties[key] = zodTypeToJsonSchema(fieldInner);
+      if (!optional) required.push(key);
     }
     return {
       type: "object",
@@ -76,19 +93,36 @@ function zSchemaToJsonSchema(schema: z.ZodType): Record<string, unknown> {
       required: required.length > 0 ? required : undefined,
     };
   }
-  if (def.typeName === "ZodString") return { type: "string" };
-  if (def.typeName === "ZodNumber") return { type: "number" };
-  if (def.typeName === "ZodBoolean") return { type: "boolean" };
-  if (def.typeName === "ZodArray") return { type: "array" };
+
+  if (d.typeName === "ZodArray") {
+    const elementType = d.type!;
+    return { type: "array", items: zodTypeToJsonSchema(elementType) };
+  }
+
+  if (d.typeName === "ZodString") return { type: "string" };
+  if (d.typeName === "ZodNumber") return { type: "number" };
+  if (d.typeName === "ZodBoolean") return { type: "boolean" };
+
+  if (d.typeName === "ZodNativeEnum" && d.values) {
+    const enumValues = Object.values(d.values).filter(
+      (v) => typeof v === "string" || typeof v === "number"
+    );
+    return { type: typeof enumValues[0] === "number" ? "integer" : "string", enum: enumValues };
+  }
+
+  if (d.typeName === "ZodEnum") {
+    const enumDef = getDef(inner) as ZodDef & { options?: unknown[] };
+    return { type: "string", enum: enumDef.options ?? [] };
+  }
+
   return { type: "object", properties: {} };
 }
 
 function zodTypeToJsonSchema(zodType: z.ZodType): Record<string, unknown> {
-  const def = (zodType as { _def?: { typeName?: string; description?: string } })
-    ._def;
+  // Capture description from the original (possibly wrapped) type before unwrapping.
+  const topDef = getDef(zodType);
   const base = zSchemaToJsonSchema(zodType);
-  if (def?.description)
-    (base as Record<string, unknown>).description = def.description;
+  if (topDef.description) base.description = topDef.description;
   return base;
 }
 
@@ -257,6 +291,7 @@ async function main(): Promise<void> {
       accounts: accountsDeps,
       orders: ordersDeps,
     };
+    const quotesDeps: QuotesToolsDeps = { http };
 
     const allToolDefs: ToolDef[] = [
       ...ordersToolDefinitions.map((t) => ({
@@ -279,6 +314,13 @@ async function main(): Promise<void> {
         inputSchema: t.inputSchema,
         handler: t.handler as ToolDef["handler"],
         deps: t.depsKey === "both" ? accountsToolsDeps : accountsDeps,
+      })),
+      ...quotesToolDefinitions.map((t) => ({
+        name: t.name,
+        description: t.description,
+        inputSchema: t.inputSchema,
+        handler: t.handler as ToolDef["handler"],
+        deps: quotesDeps,
       })),
     ];
 
