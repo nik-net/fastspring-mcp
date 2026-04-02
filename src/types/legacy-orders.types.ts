@@ -35,7 +35,28 @@ export interface LegacyOrderItem {
   productDisplay?: string;
   productName?: string;
   quantity?: number;
+  /** Reference of the subscription created by this line item, if any. */
   subscriptionReference?: string;
+  /** Unit price before discount and tax. */
+  unit?: number;
+  /** Per-unit discount amount. */
+  unitDiscount?: number;
+  /** Per-unit tax amount. */
+  unitTax?: number;
+  /** Line item total (unit × quantity, after discount, before tax). */
+  total?: number;
+  /** Line item discount total. */
+  discount?: number;
+  /** Line item tax total. */
+  tax?: number;
+  /** Product SKU, if set. */
+  sku?: string;
+  /**
+   * Item-level tags as returned by the Classic API.
+   * The Classic API serialises these as a comma-separated key=value string,
+   * e.g. "bulkOrderId=BO-123,salesRep=alice".
+   */
+  tags?: string;
 }
 
 export interface LegacyOrderPayment {
@@ -61,11 +82,21 @@ export interface LegacyOrder {
   referrer?: string;
   originIp?: string;
   total?: number;
+  /** Order-level discount total. */
+  discount?: number;
   tax?: number;
   shipping?: number;
+  /** Coupon code applied to the order, if any. */
+  coupon?: string;
   sourceName?: string;
   sourceKey?: string;
   sourceCampaign?: string;
+  /**
+   * Order-level tags as returned by the Classic API.
+   * The Classic API serialises these as a comma-separated key=value string,
+   * e.g. "bulkOrderId=BO-123,salesRep=alice".
+   */
+  tags?: string;
   customer?: LegacyOrderCustomer;
   purchaser?: LegacyOrderCustomer;
   address?: LegacyOrderAddress;

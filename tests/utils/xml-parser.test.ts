@@ -75,6 +75,53 @@ const MULTI_ITEM_ORDER_XML = `<?xml version="1.0" encoding="UTF-8" standalone="y
   </payments>
 </order>`;
 
+/** Order with tags, coupon, discount, and rich item-level fields including subscriptionReference. */
+const TAGGED_ORDER_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<order>
+  <reference>VI8260402-9999-00001</reference>
+  <status>completed</status>
+  <statusChanged>2026-04-02T10:00:00.000Z</statusChanged>
+  <test>false</test>
+  <returnStatus>none</returnStatus>
+  <customer>
+    <firstName>Alice</firstName>
+    <lastName>Example</lastName>
+    <email>alice@example.com</email>
+  </customer>
+  <currency>USD</currency>
+  <total>79.20</total>
+  <discount>8.80</discount>
+  <tax>0</tax>
+  <shipping>0</shipping>
+  <coupon>BULK10</coupon>
+  <tags>bulkOrderId=BO-123,salesRep=alice</tags>
+  <orderItems>
+    <orderItem>
+      <productDisplay>Annual Subscription</productDisplay>
+      <productName>annual-subscription</productName>
+      <quantity>1</quantity>
+      <unit>88.00</unit>
+      <unitDiscount>8.80</unitDiscount>
+      <unitTax>0</unitTax>
+      <total>79.20</total>
+      <discount>8.80</discount>
+      <tax>0</tax>
+      <sku>SKU-ANN-001</sku>
+      <subscriptionReference>VI8260402-9999-00001S</subscriptionReference>
+      <tags>itemTag=value1</tags>
+    </orderItem>
+  </orderItems>
+  <payments>
+    <payment>
+      <status>completed</status>
+      <statusChanged>2026-04-02T00:00:00Z</statusChanged>
+      <methodType>creditcard</methodType>
+      <currency>USD</currency>
+      <total>79.20</total>
+    </payment>
+  </payments>
+</order>`;
+
 const SEARCH_RESULT_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <orders>
   <order>
@@ -183,6 +230,67 @@ describe("parseLegacyOrderXml", () => {
     expect(() => parseLegacyOrderXml(badXml)).toThrow(
       "Legacy API response missing <order> root element"
     );
+  });
+
+  // -------------------------------------------------------------------------
+  // Tags, coupon, discount, and rich item fields (regression tests for the
+  // bug where parseLegacyOrderXml silently dropped these fields)
+  // -------------------------------------------------------------------------
+
+  it("parses order-level tags string", () => {
+    const order = parseLegacyOrderXml(TAGGED_ORDER_XML);
+    expect(order.tags).toBe("bulkOrderId=BO-123,salesRep=alice");
+  });
+
+  it("parses order-level coupon", () => {
+    const order = parseLegacyOrderXml(TAGGED_ORDER_XML);
+    expect(order.coupon).toBe("BULK10");
+  });
+
+  it("parses order-level discount", () => {
+    const order = parseLegacyOrderXml(TAGGED_ORDER_XML);
+    expect(order.discount).toBe(8.8);
+  });
+
+  it("parses subscriptionReference on an order item", () => {
+    const order = parseLegacyOrderXml(TAGGED_ORDER_XML);
+    expect(order.orderItems?.[0].subscriptionReference).toBe("VI8260402-9999-00001S");
+  });
+
+  it("parses item-level tags string", () => {
+    const order = parseLegacyOrderXml(TAGGED_ORDER_XML);
+    expect(order.orderItems?.[0].tags).toBe("itemTag=value1");
+  });
+
+  it("parses item-level pricing fields (unit, unitDiscount, total, discount, tax)", () => {
+    const order = parseLegacyOrderXml(TAGGED_ORDER_XML);
+    const item = order.orderItems?.[0];
+    expect(item?.unit).toBe(88);
+    expect(item?.unitDiscount).toBe(8.8);
+    expect(item?.unitTax).toBe(0);
+    expect(item?.total).toBe(79.2);
+    expect(item?.discount).toBe(8.8);
+    expect(item?.tax).toBe(0);
+  });
+
+  it("parses item-level sku", () => {
+    const order = parseLegacyOrderXml(TAGGED_ORDER_XML);
+    expect(order.orderItems?.[0].sku).toBe("SKU-ANN-001");
+  });
+
+  it("does not include tags field when absent from the XML", () => {
+    const order = parseLegacyOrderXml(FULL_ORDER_XML);
+    expect(order.tags).toBeUndefined();
+  });
+
+  it("does not include coupon field when absent from the XML", () => {
+    const order = parseLegacyOrderXml(FULL_ORDER_XML);
+    expect(order.coupon).toBeUndefined();
+  });
+
+  it("does not include discount field when absent from the XML", () => {
+    const order = parseLegacyOrderXml(FULL_ORDER_XML);
+    expect(order.discount).toBeUndefined();
   });
 });
 
